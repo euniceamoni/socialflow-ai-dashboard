@@ -1,34 +1,53 @@
 export enum View {
-  DASHBOARD = 'DASHBOARD',
-  ANALYTICS = 'ANALYTICS',
-  CALENDAR = 'CALENDAR',
-  CREATE_POST = 'CREATE_POST',
-  MEDIA_LIBRARY = 'MEDIA_LIBRARY',
-  INBOX = 'INBOX',
-  SETTINGS = 'SETTINGS'
+  DASHBOARD = "DASHBOARD",
+  ANALYTICS = "ANALYTICS",
+  CALENDAR = "CALENDAR",
+  CREATE_POST = "CREATE_POST",
+  MEDIA_LIBRARY = "MEDIA_LIBRARY",
+  INBOX = "INBOX",
+  REWARDS = "REWARDS",
+  SETTINGS = "SETTINGS",
+  BLOCKCHAIN_MONITOR = "BLOCKCHAIN_MONITOR",
+  PORTFOLIO = "PORTFOLIO",
+  TRANSACTION_HISTORY = "TRANSACTION_HISTORY",
+  ACCOUNT_PERFORMANCE = "ACCOUNT_PERFORMANCE",
+  REWARDS_CONFIG = "REWARDS_CONFIG",
 }
 
 export interface NavItem {
   id: View;
   label: string;
-  icon: React.ReactNode;
+  icon: any;
 }
 
 export interface ViewProps {
   onNavigate: (view: View) => void;
 }
+51
+
+export interface MonetizationSettings {
+  enableTips: boolean;
+  payPerView: boolean;
+  subscriptionOnly: boolean;
+  tipAmount?: number;
+  accessPrice?: number;
+  selectedToken?: string;
+  ipfsMetadataHash?: string;
+  accessControlContract?: string;
+}
 
 export interface Post {
   id: string;
-  platform: 'instagram' | 'tiktok' | 'facebook' | 'youtube' | 'linkedin' | 'x';
+  platform: "instagram" | "tiktok" | "facebook" | "youtube" | "linkedin" | "x";
   content: string;
   image?: string;
   date: Date;
-  status: 'scheduled' | 'published' | 'draft';
+  status: "scheduled" | "published" | "draft";
   stats?: {
     likes: number;
     views: number;
   };
+  monetization?: MonetizationSettings;
 }
 
 export interface Message {
@@ -42,12 +61,12 @@ export interface Message {
 
 export interface Conversation {
   id: string;
-  platform: 'instagram' | 'facebook' | 'x';
+  platform: "instagram" | "facebook" | "x";
   user: string;
   avatar: string;
   lastMessage: string;
   unread: boolean;
-  status: 'new' | 'pending' | 'resolved';
+  status: "new" | "pending" | "resolved";
   messages: Message[];
 }
 
@@ -60,63 +79,141 @@ export enum Platform {
   X = 'x'
 }
 
-// Report Analytics Types
-export interface ReportView {
+export enum TransactionType {
+  POST = 'post',
+  SCHEDULE = 'schedule',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  REPLY = 'reply'
+}
+
+export interface Transaction {
   id: string;
-  reportId: string;
-  reportName: string;
-  viewedBy: string;
-  viewedAt: Date;
-  duration: number;
-  device: 'desktop' | 'mobile' | 'tablet';
-}
-
-export interface ReportDownload {
-  id: string;
-  reportId: string;
-  reportName: string;
-  format: 'pdf' | 'excel' | 'csv' | 'json';
-  downloadedBy: string;
-  downloadedAt: Date;
-  fileSize: number;
-}
-
-export interface MetricPopularity {
-  metricName: string;
-  viewCount: number;
-  includeCount: number;
-  avgValue: number;
-  trend: 'up' | 'down' | 'stable';
-}
-
-export interface ReportTemplate {
-  id: string;
-  name: string;
-  description: string;
-  usageCount: number;
-  lastUsed: Date;
-  avgGenerationTime: number;
-  metrics: string[];
-  category: 'performance' | 'engagement' | 'financial' | 'custom';
-}
-
-export interface ReportEngagement {
-  reportId: string;
-  reportName: string;
-  totalViews: number;
-  uniqueViewers: number;
-  totalDownloads: number;
-  avgViewDuration: number;
-  shareCount: number;
-  commentCount: number;
-  lastActivity: Date;
-}
-
-export interface UsageInsight {
-  type: 'trend' | 'anomaly' | 'recommendation';
+  type: TransactionType;
+  platform: Platform;
   title: string;
-  description: string;
-  impact: 'high' | 'medium' | 'low';
+  description?: string;
+  scheduledTime?: Date;
+  relatedTransactions?: string[];
+  createdAt: Date;
+  data?: any;
+}
+
+// Wealth Analytics Types
+export interface WalletData {
+  address: string;
+  balance: number;
+  tokens: TokenHolding[];
+  firstSeen: Date;
+  lastActive: Date;
+  transactionCount: number;
+  category: 'whale' | 'dolphin' | 'fish' | 'shrimp';
+}
+
+export interface TokenHolding {
+  symbol: string;
+  amount: number;
+  value: number;
+  percentOfPortfolio: number;
+}
+
+export interface WealthSnapshot {
   timestamp: Date;
-  data?: Record<string, any>;
+  totalValue: number;
+  walletCount: number;
+  averageValue: number;
+  medianValue: number;
+  topHolders: WalletData[];
+}
+
+export interface WealthTrend {
+  period: string;
+  totalValue: number;
+  change: number;
+  changePercent: number;
+  newWallets: number;
+  activeWallets: number;
+}
+
+export interface WealthSegment {
+  category: string;
+  count: number;
+  totalValue: number;
+  averageValue: number;
+  percentage: number;
+}
+
+export interface WealthMigration {
+  from: string;
+  to: string;
+  value: number;
+  walletCount: number;
+  timestamp: Date;
+}
+
+// Token Holder Analysis Types
+export interface TokenHolder {
+  walletAddress: string;
+  tokenSymbol: string;
+  amount: number;
+  value: number;
+  holdingDuration: number;
+  firstPurchaseDate: Date;
+  lastTransactionDate: Date;
+  engagementScore: number;
+}
+
+export interface TokenHolderCohort {
+  cohortId: string;
+  tokenSymbol: string;
+  holderCount: number;
+  avgHoldingDuration: number;
+  avgEngagement: number;
+  totalValue: number;
+  loyaltyScore: number;
+}
+
+export interface TokenLoyaltyMetrics {
+  tokenSymbol: string;
+  totalHolders: number;
+  loyalHolders: number;
+  churnRate: number;
+  avgHoldingPeriod: number;
+  retentionRate: number;
+}
+
+// Whale Identification Types
+export interface WhaleProfile {
+  walletAddress: string;
+  portfolioValue: number;
+  totalTransactions: number;
+  avgTransactionValue: number;
+  engagementScore: number;
+  followingSince: Date;
+  lastActive: Date;
+  topTokens: { symbol: string; value: number }[];
+  riskScore: number;
+  influenceScore: number;
+}
+
+export interface WhaleTransaction {
+  id: string;
+  walletAddress: string;
+  type: 'buy' | 'sell' | 'transfer';
+  tokenSymbol: string;
+  amount: number;
+  value: number;
+  timestamp: Date;
+  fromAddress?: string;
+  toAddress?: string;
+}
+
+export interface WhaleAlert {
+  id: string;
+  walletAddress: string;
+  alertType: 'large_transaction' | 'new_whale' | 'whale_exit' | 'high_engagement';
+  severity: 'low' | 'medium' | 'high';
+  message: string;
+  timestamp: Date;
+  metadata: Record<string, any>;
 }
