@@ -1,31 +1,30 @@
-const formatMetadata = (metadata?: unknown): string => {
-  if (metadata === undefined) {
-    return '';
-  }
+import winston from 'winston';
 
-  return ` ${JSON.stringify(metadata)}`;
-};
+const isProduction = process.env.NODE_ENV === 'production';
 
-const writeLog = (
-  level: 'INFO' | 'WARN' | 'ERROR',
-  scope: string,
-  message: string,
-  metadata?: unknown,
-): void => {
-  const line = `${new Date().toISOString()} [${scope}] ${level} ${message}${formatMetadata(metadata)}`;
-
-  if (level === 'ERROR') {
-    console.error(line);
-    return;
-  }
-
-  if (level === 'WARN') {
-    console.warn(line);
-    return;
-  }
-
-  console.info(line);
-};
+// Create Winston logger instance
+const winstonLogger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: isProduction
+    ? winston.format.json() // JSON format for production (cloud-ready)
+    : winston.format.combine(
+      winston.format.colorize(),
+      winston.format.timestamp(),
+      winston.format.printf(({ timestamp, level, message, scope, ...meta }) => {
+        const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
+        return `${timestamp} [${scope || 'app'}] ${level}: ${message}${metaStr}`;
+      })
+    ),
+  transports: [
+    new winston.transports.Console(),
+    ...(isProduction
+      ? [
+        new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+        new winston.transports.File({ filename: 'logs/combined.log' }),
+      ]
+      : []),
+  ],
+});
 
 export interface Logger {
   info: (message: string, metadata?: unknown) => void;
@@ -36,13 +35,13 @@ export interface Logger {
 export const createLogger = (scope: string): Logger => {
   return {
     info: (message, metadata) => {
-      writeLog('INFO', scope, message, metadata);
+      winstonLogger.info(message, { scope, ...metadata });
     },
     warn: (message, metadata) => {
-      writeLog('WARN', scope, message, metadata);
+      winstonLogger.warn(message, { scope, ...metadata });
     },
     error: (message, metadata) => {
-      writeLog('ERROR', scope, message, metadata);
+      winstonLogger.error(message, { scope, ...metadata });
     },
   };
 };

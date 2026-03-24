@@ -3,10 +3,13 @@ import path from 'path';
 import fs from 'fs/promises';
 import { TranscodingJob, VideoQuality, VideoFormat, TranscodedOutput, TranscodingOptions } from '../types/video';
 import { v4 as uuidv4 } from 'uuid';
+import { createLogger } from '../lib/logger';
+
+const logger = createLogger('VideoService');
 
 class VideoService {
   private jobs: Map<string, TranscodingJob> = new Map();
-  
+
   // Default quality presets
   private readonly DEFAULT_QUALITIES: VideoQuality[] = [
     { name: '1080p', width: 1920, height: 1080, bitrate: '5000k' },
@@ -94,7 +97,7 @@ class VideoService {
         try {
           const output = await this.transcodeVideo(job, quality, format);
           outputs.push(output);
-          
+
           completedTasks++;
           const progress = Math.round((completedTasks / totalTasks) * 100);
           this.updateJobProgress(jobId, progress);
@@ -108,7 +111,7 @@ class VideoService {
     // Update job with outputs
     job.outputs = outputs;
     job.updatedAt = new Date();
-    
+
     if (outputs.length === 0) {
       this.updateJobStatus(jobId, 'failed', 'All transcoding attempts failed');
     } else {
@@ -138,20 +141,19 @@ class VideoService {
         .audioFrequency(44100)
         .format(format.extension)
         .on('start', (commandLine: string) => {
-          console.log(`Starting transcoding: ${outputFilename}`);
-          console.log(`FFmpeg command: ${commandLine}`);
+          logger.info(`Starting transcoding: ${outputFilename}`, { commandLine });
         })
         .on('progress', (progress: { percent?: number }) => {
           if (progress.percent) {
-            console.log(`Processing ${outputFilename}: ${Math.round(progress.percent)}%`);
+            logger.info(`Processing ${outputFilename}: ${Math.round(progress.percent)}%`);
           }
         })
         .on('end', async () => {
-          console.log(`Completed: ${outputFilename}`);
-          
+          logger.info(`Completed: ${outputFilename}`);
+
           // Get file size
           const stats = await fs.stat(outputPath);
-          
+
           resolve({
             quality: quality.name,
             format: format.extension,

@@ -1,4 +1,7 @@
 import { TranscodingJob } from '../types/video';
+import { createLogger } from '../lib/logger';
+
+const logger = createLogger('VideoQueue');
 
 interface QueueJob {
   id: string;
@@ -41,7 +44,7 @@ class VideoQueue {
       this.queue.splice(insertIndex, 0, queueJob);
     }
 
-    console.log(`Job ${jobId} added to queue (priority: ${priority})`);
+    logger.info(`Job ${jobId} added to queue`, { priority });
 
     // Start processing if not already running
     if (!this.processing) {
@@ -68,13 +71,13 @@ class VideoQueue {
       this.activeJobs++;
       job.startedAt = new Date();
 
-      console.log(`Starting job ${job.id} (queue length: ${this.queue.length})`);
+      logger.info(`Starting job ${job.id}`, { queueLength: this.queue.length });
 
       try {
         await job.processor();
-        console.log(`Job ${job.id} completed successfully`);
+        logger.info(`Job ${job.id} completed successfully`);
       } catch (error) {
-        console.error(`Job ${job.id} failed:`, error);
+        logger.error(`Job ${job.id} failed`, { error });
       } finally {
         this.activeJobs--;
       }

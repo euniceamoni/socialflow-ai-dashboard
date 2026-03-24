@@ -1,11 +1,14 @@
 import { runDataPruning } from '../retention/dataPruningService';
+import { createLogger } from '../lib/logger';
+
+const logger = createLogger('data-pruning');
 
 const main = async (): Promise<void> => {
   const summary = await runDataPruning();
-  console.log('[data-pruning] Completed:', JSON.stringify(summary, null, 2));
+  logger.info('Completed', { summary });
 };
 
 void main().catch((error) => {
-  console.error('[data-pruning] Failed:', error instanceof Error ? error.message : String(error));
+  logger.error('Failed', { error: error instanceof Error ? error.message : String(error) });
   process.exitCode = 1;
 });
