@@ -1,27 +1,13 @@
 import { Router } from 'express';
-import { body, validationResult } from 'express-validator';
-import { Request, Response, NextFunction } from 'express';
 import { register, login, refresh, logout } from '../controllers/auth';
+import { validate } from '../middleware/validate';
+import { credentialsSchema, refreshTokenSchema } from '../schemas/auth';
 
 const router = Router();
 
-const validate = (req: Request, res: Response, next: NextFunction): void => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    res.status(422).json({ errors: errors.array() });
-    return;
-  }
-  next();
-};
-
-const credentialsRules = [
-  body('email').isEmail().normalizeEmail(),
-  body('password').isLength({ min: 8 }),
-];
-
-router.post('/register', credentialsRules, validate, register);
-router.post('/login', credentialsRules, validate, login);
-router.post('/refresh', body('refreshToken').notEmpty(), validate, refresh);
-router.post('/logout', body('refreshToken').notEmpty(), validate, logout);
+router.post('/register', validate(credentialsSchema), register);
+router.post('/login',    validate(credentialsSchema), login);
+router.post('/refresh',  validate(refreshTokenSchema), refresh);
+router.post('/logout',   validate(refreshTokenSchema), logout);
 
 export default router;
