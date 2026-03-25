@@ -6,13 +6,15 @@ import healthRoutes from './routes/health';
 import jobsRoutes from './routes/jobs';
 import { requestIdMiddleware } from './middleware/requestId';
 import { errorHandler, notFoundHandler } from './middleware/error';
+import webhookRoutes from './routes/webhooks';
+import realtimeRoutes from './routes/realtime';
 
 const app: Application = express();
 
 // Security middleware
 app.use(helmet());
 
-// CORS
+// CORS — allow EventSource connections
 app.use(cors());
 
 // Request ID middleware (must be first to ensure all logs have request ID)
