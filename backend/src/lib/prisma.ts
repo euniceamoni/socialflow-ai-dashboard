@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
+import { softDeleteMiddleware } from '../middleware/prismaSoftDelete';
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
@@ -12,6 +13,10 @@ const ORG_SCOPED_MODELS = new Set(['Post', 'AnalyticsEntry']);
 function createInstrumentedPrisma(): PrismaClient {
   const client = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
 
+  // Soft delete: convert deletes to updates and filter out deleted records
+  client.$use(softDeleteMiddleware);
+
+  // Wrap every query in a span via Prisma middleware
   // Tracing middleware
   client.$use(async (params, next) => {
     const spanName = `db.${params.model ?? 'unknown'}.${params.action}`;

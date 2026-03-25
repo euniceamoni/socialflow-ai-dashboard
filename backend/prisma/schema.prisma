@@ -11,6 +11,10 @@ model User {
   email         String               @unique
   passwordHash  String
   refreshTokens String[]
+  role          String    @default("user") // "user" or "mentor"
+  listings      Listing[] @relation("MentorListings")
+  createdAt     DateTime  @default(now())
+  deletedAt     DateTime?
   createdAt     DateTime             @default(now())
   memberships   OrganizationMember[]
 }
@@ -63,4 +67,17 @@ model DynamicConfig {
   type        String   @default("string")
   description String?
   updatedAt   DateTime @updatedAt
+}
+
+model Listing {
+  id          String    @id @default(uuid())
+  title       String
+  description String
+  price       Float?
+  isActive    Boolean   @default(true) // Toggle for visibility
+  mentorId    String
+  mentor      User      @relation("MentorListings", fields: [mentorId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
 }
