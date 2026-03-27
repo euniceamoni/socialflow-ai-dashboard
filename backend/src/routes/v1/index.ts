@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { authLimiter, aiLimiter, generalLimiter } from '../../middleware/rateLimit';
+import { ipWhitelistMiddleware } from '../../middleware/ipWhitelist';
 
 // Route modules
 import authRoutes         from '../auth';
@@ -40,9 +41,9 @@ router.get('/', (_req: Request, res: Response) => {
   });
 });
 
-// ── Health (no rate limiting) ─────────────────────────────────────────────────
-router.use('/health', healthRoutes);
-router.use('/status', statusRoutes);
+// ── Health (no rate limiting, but IP whitelisted) ─────────────────────────
+router.use('/health', ipWhitelistMiddleware, healthRoutes);
+router.use('/status', ipWhitelistMiddleware, statusRoutes);
 
 // ── Auth (strict limiter — brute-force protection) ────────────────────────────
 router.use('/auth', authLimiter, authRoutes);
@@ -54,14 +55,14 @@ router.use('/translation', aiLimiter, translationRoutes);
 
 // ── General API (standard limiter) ───────────────────────────────────────────
 router.use('/analytics',     generalLimiter, analyticsRoutes);
-router.use('/audit',         generalLimiter, auditRoutes);
+router.use('/audit',         generalLimiter, ipWhitelistMiddleware, auditRoutes);
 router.use('/billing',       generalLimiter, billingRoutes);
-router.use('/circuit-breaker', generalLimiter, circuitBreakerRoutes);
-router.use('/config',        generalLimiter, configRoutes);
+router.use('/circuit-breaker', generalLimiter, ipWhitelistMiddleware, circuitBreakerRoutes);
+router.use('/config',        generalLimiter, ipWhitelistMiddleware, configRoutes);
 router.use('/exports',       generalLimiter, exportsRoutes);
 router.use('/facebook',      generalLimiter, facebookRoutes);
 router.use('/images',        generalLimiter, imagesRoutes);
-router.use('/jobs',          generalLimiter, jobsRoutes);
+router.use('/jobs',          generalLimiter, ipWhitelistMiddleware, jobsRoutes);
 router.use('/listings',      generalLimiter, listingsRoutes);
 router.use('/organizations', generalLimiter, organizationsRoutes);
 router.use('/realtime',      generalLimiter, realtimeRoutes);
