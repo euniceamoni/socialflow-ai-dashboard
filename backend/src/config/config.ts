@@ -10,6 +10,10 @@ const envSchema = z.object({
 
   // ── Database ──────────────────────────────────────────────────────────────
   DATABASE_URL: z.url('DATABASE_URL must be a valid URL'),
+  // Connection pool — defaults tuned per environment in src/lib/prisma.ts
+  // Override here to hard-pin values regardless of NODE_ENV.
+  DB_CONNECTION_LIMIT: z.coerce.number().int().positive().optional(),
+  DB_POOL_TIMEOUT: z.coerce.number().int().positive().optional(),
 
   // ── JWT ───────────────────────────────────────────────────────────────────
   JWT_SECRET: z.string().min(1, 'JWT_SECRET is required'),

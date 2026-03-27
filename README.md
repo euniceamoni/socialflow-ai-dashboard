@@ -23,12 +23,33 @@ npm run dev
 | `TWITTER_API_KEY` | Twitter / X API key |
 | `TWITTER_API_SECRET` | Twitter / X API secret |
 
+### Connection pool
+
+Pool parameters are injected automatically into `DATABASE_URL` at startup based on `NODE_ENV`. Override with env vars if needed.
+
+| `NODE_ENV` | `connection_limit` | `pool_timeout` |
+|---|---|---|
+| `development` | 5 | 10s |
+| `test` | 2 | 10s |
+| `production` | 10 | 20s |
+
+Override defaults:
+
+```bash
+DB_CONNECTION_LIMIT=20   # max open connections per Prisma process
+DB_POOL_TIMEOUT=30       # seconds to wait for a free connection before erroring
+```
+
+**Sizing guidance:** `connection_limit` should be `(2 × CPU cores) + 1` per app instance, and must not exceed your Postgres `max_connections` divided by the number of running instances. For PgBouncer in transaction mode, keep it at `1`.
+
 ### Optional variables with defaults
 
 | Variable | Default | Description |
 |---|---|---|
 | `NODE_ENV` | `development` | `development` \| `production` \| `test` |
 | `BACKEND_PORT` | `3001` | HTTP server port |
+| `DB_CONNECTION_LIMIT` | see pool table | Max open connections per Prisma process |
+| `DB_POOL_TIMEOUT` | see pool table | Seconds to wait for a free connection |
 | `JWT_EXPIRES_IN` | `15m` | Access token TTL |
 | `JWT_REFRESH_EXPIRES_IN` | `7d` | Refresh token TTL |
 | `REDIS_HOST` | `127.0.0.1` | Redis host |
