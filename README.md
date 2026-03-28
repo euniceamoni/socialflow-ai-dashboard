@@ -157,6 +157,104 @@ The backend's `SIGTERM` handler in `tracing.ts` is intentionally separate from t
 
 ---
 
+## Database Backup Runbook
+
+The backup script is at `scripts/db-backup.ts`. It dumps the database with `pg_dump`, uploads the file to S3, then prunes objects older than 30 days.
+
+### Prerequisites
+
+**Tooling** — `pg_dump` must be on `PATH` and match the server's major Postgres version:
+
+```bash
+pg_dump --version   # e.g. pg_dump (PostgreSQL) 16.x
+```
+
+**Environment variables:**
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `DATABASE_URL` | yes | — | PostgreSQL connection string |
+| `S3_BACKUP_BUCKET` | yes | — | S3 bucket name for backup storage |
+| `AWS_REGION` | no | `us-east-1` | AWS region of the bucket |
+
+AWS credentials are resolved by the SDK in the standard order: env vars (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`), `~/.aws/credentials`, or an attached IAM role (recommended in production).
+
+**IAM permissions** — the identity running the script needs:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": [
+    "s3:PutObject",
+    "s3:ListBucket",
+    "s3:DeleteObject"
+  ],
+  "Resource": [
+    "arn:aws:s3:::YOUR_BUCKET",
+    "arn:aws:s3:::YOUR_BUCKET/backups/*"
+  ]
+}
+```
+
+### Running a backup
+
+```bash
+DATABASE_URL="postgresql://user:pass@host:5432/db" \
+S3_BACKUP_BUCKET="my-backups" \
+npx ts-node scripts/db-backup.ts
+```
+
+Expected output:
+
+```
+Starting database backup...
+Uploading to S3...
+Backup uploaded: s3://my-backups/backups/db-backup-2026-03-28.sql
+Backup complete
+```
+
+### Validation and integrity check
+
+After the script exits, confirm the object exists and is non-zero:
+
+```bash
+aws s3 ls s3://$S3_BACKUP_BUCKET/backups/ --human-readable | sort | tail -5
+```
+
+Verify the dump is a valid PostgreSQL archive:
+
+```bash
+aws s3 cp s3://$S3_BACKUP_BUCKET/backups/db-backup-$(date +%F).sql /tmp/verify.sql
+head -3 /tmp/verify.sql   # first line should start with "--"
+pg_restore --list /tmp/verify.sql > /dev/null && echo "OK"
+```
+
+### Restore simulation procedure
+
+Run this against a throwaway database — never against production:
+
+```bash
+# 1. Download the target backup
+aws s3 cp s3://$S3_BACKUP_BUCKET/backups/db-backup-<DATE>.sql /tmp/restore.sql
+
+# 2. Create an isolated restore target
+createdb restore_test
+
+# 3. Restore
+psql restore_test < /tmp/restore.sql
+
+# 4. Spot-check row counts against production
+psql restore_test -c "\dt"
+psql restore_test -c "SELECT COUNT(*) FROM users;"
+
+# 5. Drop the test database when done
+dropdb restore_test
+```
+
+A successful restore with matching row counts confirms the backup is usable.
+
+---
+
 ## Running tests
 
 ```bash
