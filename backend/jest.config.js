@@ -33,7 +33,16 @@ module.exports = {
         '**/tests/**/*.test.ts',
         '**/services/__tests__/**/*.test.ts',
       ],
-      moduleNameMapper: sharedModuleNameMapper,
+      moduleNameMapper: {
+        ...sharedModuleNameMapper,
+        '^opossum$': '<rootDir>/src/__tests__/__mocks__/opossum.js',
+        '^.*/lib/prisma$': '<rootDir>/src/__tests__/__mocks__/prisma.js',
+        '^.*/lib/logger$': '<rootDir>/src/__tests__/__mocks__/logger.js',
+        '^.*/CircuitBreakerService$': '<rootDir>/src/__tests__/__mocks__/CircuitBreakerService.js',
+        '^.*/utils/LockService$': '<rootDir>/src/__tests__/__mocks__/LockService.js',
+      },
+      setupFiles: ['<rootDir>/src/__tests__/unitSetup.ts'],
+      transform: { '^.+\\.tsx?$': ['ts-jest', { diagnostics: false }] },
     },
     {
       displayName: 'e2e',

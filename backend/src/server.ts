@@ -27,11 +27,30 @@ let webhookWorker: Worker | null = null;
 let twitterWebhookWorker: Worker | null = null;
 let isShuttingDown = false;
 
+export interface ShutdownDeps {
+  server: Server | null;
+  webhookWorker: Worker | null;
+  twitterWebhookWorker: Worker | null;
+}
+
+export interface ShutdownOptions {
+  /** Called instead of process.exit — injectable for testing */
+  exit?: (code: number) => void;
+  /** Force-exit timeout in ms (default 30 000) */
+  timeoutMs?: number;
+}
+
 /**
  * Graceful shutdown handler
- * Closes all connections and cleans up resources before exiting
+ * Closes all connections and cleans up resources before exiting.
+ * Exported for unit testing with injectable exit handler.
  */
-const gracefulShutdown = async (signal: string, exitCode: number = 0): Promise<void> => {
+export const gracefulShutdown = async (
+  signal: string,
+  exitCode: number = 0,
+  deps: ShutdownDeps = { server: serverInstance, webhookWorker, twitterWebhookWorker },
+  { exit = (code) => process.exit(code), timeoutMs = 30_000 }: ShutdownOptions = {},
+): Promise<void> => {
   // Prevent multiple shutdown calls
   if (isShuttingDown) {
     logger.warn('Shutdown already in progress, ignoring duplicate signal');
@@ -44,14 +63,14 @@ const gracefulShutdown = async (signal: string, exitCode: number = 0): Promise<v
   // Set a timeout to force exit if graceful shutdown takes too long
   const forceExitTimeout = setTimeout(() => {
     logger.error('Graceful shutdown timeout exceeded, forcing exit');
-    process.exit(1);
-  }, 30000); // 30 seconds timeout
+    exit(1);
+  }, timeoutMs);
 
   try {
     // Stop accepting new connections
-    if (serverInstance) {
+    if (deps.server) {
       await new Promise<void>((resolve, reject) => {
-        serverInstance!.close((err) => {
+        deps.server!.close((err) => {
           if (err) {
             logger.error('Error closing HTTP server', { error: err });
             reject(err);
@@ -85,7 +104,7 @@ const gracefulShutdown = async (signal: string, exitCode: number = 0): Promise<v
 
     // Stop webhook delivery worker
     try {
-      if (webhookWorker) await webhookWorker.close();
+      if (deps.webhookWorker) await deps.webhookWorker.close();
       logger.info('Webhook worker stopped');
     } catch (error) {
       logger.error('Failed to stop webhook worker', {
@@ -95,7 +114,7 @@ const gracefulShutdown = async (signal: string, exitCode: number = 0): Promise<v
 
     // Stop Twitter webhook worker
     try {
-      if (twitterWebhookWorker) await twitterWebhookWorker.close();
+      if (deps.twitterWebhookWorker) await deps.twitterWebhookWorker.close();
       logger.info('Twitter webhook worker stopped');
     } catch (error) {
       logger.error('Failed to stop Twitter webhook worker', {
@@ -145,15 +164,20 @@ const gracefulShutdown = async (signal: string, exitCode: number = 0): Promise<v
 
     clearTimeout(forceExitTimeout);
     logger.info('Shutdown complete');
-    process.exit(exitCode);
+    exit(exitCode);
   } catch (error) {
     clearTimeout(forceExitTimeout);
     logger.error('Error during graceful shutdown', {
       error: error instanceof Error ? error.message : String(error),
     });
-    process.exit(1);
+    exit(1);
+  } finally {
+    isShuttingDown = false;
   }
 };
+
+/** Reset shutdown guard — for testing only */
+export const _resetShutdownState = () => { isShuttingDown = false; };
 
 /**
  * Global uncaught exception handler

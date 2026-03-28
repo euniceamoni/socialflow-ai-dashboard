@@ -11,8 +11,8 @@ process.env.TWITTER_BEARER_TOKEN = 'test-bearer-token';
 // Mock circuit breaker to pass through directly (no state machine in unit tests)
 jest.mock('../../services/CircuitBreakerService', () => ({
   circuitBreakerService: {
-    execute: jest.fn((_name: string, fn: () => any, fallback: () => any) => {
-      try { return fn(); } catch (e) { return fallback(); }
+    execute: jest.fn(async (_name: string, fn: () => any, fallback: () => any) => {
+      try { return await fn(); } catch (e) { return fallback ? fallback() : Promise.reject(e); }
     }),
     getStats: jest.fn(() => ({})),
   },

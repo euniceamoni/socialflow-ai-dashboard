@@ -41,7 +41,9 @@ function buildDatasourceUrl(): string {
 }
 
 function createInstrumentedPrisma(): PrismaClient {
-  const client = new PrismaClient({ datasourceUrl: buildDatasourceUrl() });
+  // Prisma v7 reads DATABASE_URL from the environment; inject pool params before construction
+  process.env.DATABASE_URL = buildDatasourceUrl();
+  const client = new PrismaClient();
 
   // Soft delete: convert deletes to updates and filter out deleted records
   client.$use(softDeleteMiddleware);
