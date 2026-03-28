@@ -266,3 +266,117 @@ npx jest --testPathPatterns="config/__tests__/config.test.ts" --coverage --colle
 ```
 
 The config service maintains **100% statement, branch, function, and line coverage**.
+
+---
+
+## Optional dependency matrix
+
+All packages listed below are installed in `node_modules`. Whether a feature is **active** at runtime depends entirely on the corresponding environment variable(s) being set. Missing variables cause the feature to be silently skipped or to throw on first use — not at startup — so the process will boot in a degraded state without any warning unless you verify explicitly (see [Startup verification](#startup-verification) below).
+
+### Redis
+
+Redis is used by four independent subsystems. Each connects via `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` / `REDIS_DB`.
+
+| Subsystem | Degraded behaviour when Redis is unreachable | Production required? |
+|-----------|----------------------------------------------|----------------------|
+| BullMQ job queues (`bullmq`, `@socket.io/redis-adapter`) | Background jobs (video transcoding, data pruning, social sync) do not run. Queue admin endpoints return errors. | **Yes** |
+| Distributed rate limiting (`rate-limit-redis`) | Falls back to in-process memory store. Limits are not shared across instances — effective rate limit multiplies by replica count. | **Yes** (multi-instance) |
+| JWT blacklist / token revocation (`AuthBlacklistService`) | Revoked tokens remain valid until they expire naturally. Logout does not invalidate tokens server-side. | **Yes** |
+| Response cache (`cache.ts`) | Cache misses on every request; upstream services hit on every call. | Recommended |
+
+### Elasticsearch
+
+| Package | Env var | Degraded behaviour | Production required? |
+|---------|---------|-------------------|----------------------|
+| `winston-elasticsearch` | `ELASTICSEARCH_URL` | Log transport is not registered. Logs go to console (and file in production) only — no Kibana/ECS indexing. | Recommended for observability |
+
+Optional auth: set `ELASTICSEARCH_USERNAME` + `ELASTICSEARCH_PASSWORD`. TLS verification is on by default; set `ELASTICSEARCH_TLS_REJECT_UNAUTHORIZED=false` only for self-signed certs in non-production environments.
+
+### MeiliSearch
+
+| Package | Env vars | Degraded behaviour | Production required? |
+|---------|---------|-------------------|----------------------|
+| `meilisearch` | `MEILISEARCH_HOST` (default `http://localhost:7700`), `MEILISEARCH_ADMIN_KEY`, `MEILISEARCH_SEARCH_KEY` | `SearchService` initialises but every search call fails at runtime with a connection error. Full-text search across posts is unavailable. | **Yes** (if search is used) |
+
+### Stripe
+
+| Package | Env vars | Degraded behaviour | Production required? |
+|---------|---------|-------------------|----------------------|
+| `stripe` | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | `BillingService` throws `STRIPE_SECRET_KEY is not set` on first billing call. Webhook signature verification throws on receipt of any Stripe event. All `/billing` routes are broken. | **Yes** (if billing is enabled) |
+
+### Translation
+
+Both providers are optional. If neither key is set, `TranslationService` throws `No translation provider available` on every translation request.
+
+| Provider | Env var | Notes |
+|----------|---------|-------|
+| DeepL | `DEEPL_API_KEY` | Preferred provider when set |
+| Google Translate | `GOOGLE_TRANSLATE_API_KEY` | Fallback when DeepL key is absent |
+
+### Text-to-speech (TTS)
+
+Both providers are optional. If neither key is set, `TTSService` throws `No TTS provider configured` on every TTS request.
+
+| Provider | Env var | Notes |
+|----------|---------|-------|
+| ElevenLabs | `ELEVENLABS_API_KEY` | Preferred provider when set |
+| Google TTS | `GOOGLE_TTS_API_KEY` | Fallback when ElevenLabs key is absent |
+
+### FFmpeg (video processing)
+
+| Binary | Used by | Degraded behaviour | Production required? |
+|--------|---------|-------------------|----------------------|
+| `ffmpeg` (system binary, wrapped by `fluent-ffmpeg`) | `VideoService`, `AudioMerger` | Video transcoding jobs fail at the FFmpeg spawn step. Upload endpoints still accept files but processing never completes. | **Yes** (if video features are used) |
+
+`ffmpeg` must be on `PATH`. The Node package `fluent-ffmpeg` is a wrapper only — it does not bundle the binary.
+
+### Image optimisation
+
+| Package | Used by | Degraded behaviour | Production required? |
+|---------|---------|-------------------|----------------------|
+| `sharp` | `ImageOptimizationService` | Image resize/compress calls throw at runtime. Uploaded images are stored unoptimised. | Recommended |
+
+`sharp` ships prebuilt native binaries. If the binary for the current platform is missing (e.g. after a cross-platform `npm ci`), the module load itself will throw. Rebuild with `npm rebuild sharp`.
+
+### Slack health alerts
+
+| Package | Env var | Degraded behaviour | Production required? |
+|---------|---------|-------------------|----------------------|
+| Slack webhook (HTTP, no extra package) | `SLACK_WEBHOOK_URL` | Slack provider is not registered in the notification manager. Health alerts are not sent to Slack. Other alert channels (if configured) are unaffected. | Recommended for on-call |
+
+---
+
+### Startup verification
+
+Run these after deploying to confirm each optional subsystem is active:
+
+```bash
+# Redis — expect PONG
+redis-cli -h $REDIS_HOST -p $REDIS_PORT ping
+
+# Elasticsearch — expect HTTP 200 with cluster info
+curl -s "$ELASTICSEARCH_URL" | grep cluster_name
+
+# MeiliSearch — expect {"status":"available",...}
+curl -s "$MEILISEARCH_HOST/health"
+
+# FFmpeg — expect version string
+ffmpeg -version | head -1
+
+# Stripe — expect the key prefix (never log the full key)
+echo $STRIPE_SECRET_KEY | cut -c1-7   # should print "sk_live" or "sk_test"
+
+# Translation providers
+echo "DeepL:  ${DEEPL_API_KEY:+set}${DEEPL_API_KEY:-NOT SET}"
+echo "Google: ${GOOGLE_TRANSLATE_API_KEY:+set}${GOOGLE_TRANSLATE_API_KEY:-NOT SET}"
+
+# TTS providers
+echo "ElevenLabs:  ${ELEVENLABS_API_KEY:+set}${ELEVENLABS_API_KEY:-NOT SET}"
+echo "Google TTS:  ${GOOGLE_TTS_API_KEY:+set}${GOOGLE_TTS_API_KEY:-NOT SET}"
+```
+
+The `/health` endpoint also reports Redis and queue connectivity — check it after startup:
+
+```bash
+curl -s http://localhost:$BACKEND_PORT/health | jq .
+```
