@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
+import helmet from 'helmet';
+import swaggerUi from 'swagger-ui-express';
 import { authLimiter, aiLimiter, generalLimiter } from '../../middleware/rateLimit';
 import { ipWhitelistMiddleware } from '../../middleware/ipWhitelist';
+import { swaggerSpec } from '../../config/swagger';
 
 // Route modules
 import authRoutes         from '../auth';
@@ -43,6 +46,15 @@ router.get('/', (_req: Request, res: Response) => {
     docs: '/api/v1/docs',
   });
 });
+
+// ── OpenAPI spec + Swagger UI ─────────────────────────────────────────────────
+router.get('/openapi.json', (_req: Request, res: Response) => res.json(swaggerSpec));
+router.use(
+  '/docs',
+  helmet({ contentSecurityPolicy: false }),
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, { explorer: true }),
+);
 
 // ── Health (no rate limiting, but IP whitelisted) ─────────────────────────
 router.use('/health', ipWhitelistMiddleware, healthRoutes);
