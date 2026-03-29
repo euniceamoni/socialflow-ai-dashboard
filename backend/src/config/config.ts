@@ -112,6 +112,9 @@ const envSchema = z.object({
   // ── Webhooks ──────────────────────────────────────────────────────────────
   HMAC_TIMESTAMP_TOLERANCE_MS: z.coerce.number().default(300000),
 
+  // ── Rate Limiting ─────────────────────────────────────────────────────────
+  RATE_LIMIT_STORE: z.enum(['redis', 'memory']).default('redis'),
+
   // ── Meilisearch ───────────────────────────────────────────────────────────
   MEILISEARCH_HOST: z.string().default('http://localhost:7700'),
   MEILISEARCH_ADMIN_KEY: z.string().optional(),
