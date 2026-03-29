@@ -5,9 +5,16 @@ import { authMiddleware } from '../middleware/authMiddleware';
 const router = Router();
 
 /**
- * @route GET /api/config
- * @desc Get all configuration values from cache
- * @access Private/Admin
+ * @openapi
+ * /config:
+ *   get:
+ *     tags: [Config]
+ *     summary: Get all dynamic configuration values (admin)
+ *     responses:
+ *       200:
+ *         description: Configuration map
+ *       401:
+ *         description: Unauthorized
  */
 router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -29,9 +36,16 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 });
 
 /**
- * @route POST /api/config/refresh
- * @desc Manually refresh the configuration cache from the database
- * @access Private/Admin
+ * @openapi
+ * /config/refresh:
+ *   post:
+ *     tags: [Config]
+ *     summary: Manually refresh the configuration cache from the database (admin)
+ *     responses:
+ *       200:
+ *         description: Cache refreshed
+ *       401:
+ *         description: Unauthorized
  */
 router.post('/refresh', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -43,9 +57,38 @@ router.post('/refresh', authMiddleware, async (req: Request, res: Response) => {
 });
 
 /**
- * @route PUT /api/config/:key
- * @desc Update or create a configuration value
- * @access Private/Admin
+ * @openapi
+ * /config/{key}:
+ *   put:
+ *     tags: [Config]
+ *     summary: Update or create a configuration value (admin)
+ *     parameters:
+ *       - in: path
+ *         name: key
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [value]
+ *             properties:
+ *               value: {}
+ *               type:
+ *                 type: string
+ *                 enum: [string, number, boolean, json]
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Configuration updated
+ *       400:
+ *         description: Value is required
+ *       401:
+ *         description: Unauthorized
  */
 router.put('/:key', authMiddleware, async (req: Request, res: Response) => {
   const { key } = req.params;
