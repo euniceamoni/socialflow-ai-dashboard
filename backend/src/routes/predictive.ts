@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
+import { authenticate as authMiddleware, AuthRequest } from '../middleware/authenticate';
 import { validate } from '../middleware/validate';
 import { predictiveService } from '../services/PredictiveService';
 

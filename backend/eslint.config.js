@@ -45,6 +45,16 @@ module.exports = [
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/no-explicit-any': 'warn',
+      // Prevent importing the deprecated authMiddleware shim — use authenticate from ./authenticate instead
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: '../middleware/authMiddleware',
+          message: 'Import authenticate/AuthRequest from ../middleware/authenticate instead.',
+        }, {
+          name: './authMiddleware',
+          message: 'Import authenticate/AuthRequest from ./authenticate instead.',
+        }],
+      }],
     },
   },
   {
