@@ -39,8 +39,19 @@ In production, manage secrets via:
 
 ## Image
 
-The Deployment references `socialflow-backend:latest`. Override the image tag
-per environment using a Kustomize `images:` patch or your CI pipeline:
+The Deployment references `socialflow-backend:latest`. This image is built
+exclusively from **`backend/Dockerfile`** (the canonical backend Dockerfile).
+The root `./Dockerfile` is reserved for a future frontend image and must not
+be used to build the backend.
+
+Build the image manually:
+
+```bash
+docker build -f backend/Dockerfile backend/ -t socialflow-backend:latest
+```
+
+Override the image tag per environment using a Kustomize `images:` patch or
+your CI pipeline:
 
 ```bash
 kustomize edit set image socialflow-backend=ghcr.io/org/socialflow-backend:v1.2.3
