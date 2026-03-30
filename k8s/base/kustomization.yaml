@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
   - configmap.yaml
+  - cluster-secret-store.yaml
   - secret.yaml
   - deployment.yaml
   - service.yaml
@@ -10,3 +11,4 @@ resources:
   - ingress.yaml
   - pdb.yaml
   - networkpolicy.yaml
+  - serviceaccount.yaml

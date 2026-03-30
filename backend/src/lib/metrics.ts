@@ -67,6 +67,18 @@ export const SLI_BUDGETS: Record<string, { p95: number; p99: number }> = {
   general: { p95: 500, p99: 1000 },
 };
 
+/**
+ * BullMQ queue depth gauge — waiting job count per queue.
+ * Scraped by Prometheus via /metrics and mapped to the custom metric
+ * `bullmq_queue_waiting` by the Prometheus Adapter for HPA scaling.
+ */
+export const bullmqQueueWaiting = new Gauge({
+  name: 'bullmq_queue_waiting',
+  help: 'Number of waiting jobs in each BullMQ queue',
+  labelNames: ['queue'] as const,
+  registers: [register],
+});
+
 /** Map a request path to an SLI category. */
 export function resolveCategory(path: string): string {
   if (/^\/(health|status)/.test(path) || /\/health/.test(path)) return 'health';

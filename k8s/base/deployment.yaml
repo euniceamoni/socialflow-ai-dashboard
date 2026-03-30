@@ -33,6 +33,13 @@ spec:
                 name: socialflow-config
             - secretRef:
                 name: socialflow-secrets
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+            timeoutSeconds: 5
           readinessProbe:
             httpGet:
               path: /health
@@ -45,7 +52,7 @@ spec:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 20
+            initialDelaySeconds: 0
             periodSeconds: 20
             failureThreshold: 3
             timeoutSeconds: 5

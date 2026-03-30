@@ -2,6 +2,7 @@ import { Queue, Worker, QueueEvents, JobsOptions, ConnectionOptions } from 'bull
 import { config } from '../config/config';
 import { createLogger } from '../lib/logger';
 import { redis as redisClient } from '../lib/redis';
+import { bullmqQueueWaiting } from '../lib/metrics';
 
 export { redisClient };
 
@@ -364,6 +365,23 @@ export class QueueManager {
    */
   getQueueNames(): string[] {
     return Array.from(this.queues.keys());
+  }
+
+  /**
+   * Refresh Prometheus queue-depth gauges for all registered queues.
+   * Called by the /metrics route before Prometheus scrapes.
+   */
+  async refreshQueueMetrics(): Promise<void> {
+    await Promise.all(
+      Array.from(this.queues.entries()).map(async ([name, queue]) => {
+        try {
+          const waiting = await queue.getWaitingCount();
+          bullmqQueueWaiting.set({ queue: name }, waiting);
+        } catch {
+          // non-fatal — Redis may be temporarily unavailable
+        }
+      }),
+    );
   }
 
   /**
