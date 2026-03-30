@@ -2,9 +2,9 @@ name: Staging CI/CD Pipeline
 
 on:
   push:
-    branches: ["main", "develop", "staging"]
+    branches: ["main", "develop", "staging", "master"]
   pull_request:
-    branches: ["main", "develop", "staging"]
+    branches: ["main", "develop", "staging", "master"]
 
 jobs:
   ci:
