@@ -17,7 +17,7 @@ class VideoHealthService {
         available: true,
         version,
       };
-    } catch (_error) {
+    } catch (error) {
       return {
         available: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -38,7 +38,7 @@ class VideoHealthService {
       for (const codec of requiredCodecs) {
         codecs[codec] = stdout.includes(codec);
       }
-    } catch (_error) {
+    } catch (error) {
       // If ffmpeg -codecs fails, mark all as unavailable
       for (const codec of requiredCodecs) {
         codecs[codec] = false;

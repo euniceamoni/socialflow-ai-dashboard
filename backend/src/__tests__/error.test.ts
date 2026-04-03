@@ -265,7 +265,7 @@ describe('Error Handling Middleware', () => {
       const response = await request(app).get('/unexpected-error');
 
       expect(response.status).toBe(500);
-      expect(response.body.message).toBe('Unexpected error occurred');
+      expect(response.body.message).toBe('An unexpected error occurred');
     });
   });
 

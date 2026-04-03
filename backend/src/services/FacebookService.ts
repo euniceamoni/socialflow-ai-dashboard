@@ -429,7 +429,7 @@ class FacebookService {
           throw new Error(`Failed to reply to comment: ${JSON.stringify(err)}`);
         }
 
-        return await response.json();
+        return (await response.json()) as { id: string };
       },
       async () => {
         throw new Error('Facebook API temporarily unavailable');

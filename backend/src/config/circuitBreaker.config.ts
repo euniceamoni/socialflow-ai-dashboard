@@ -183,6 +183,10 @@ export const FALLBACK_STRATEGIES = {
     enabled: true,
     message: 'Price service unavailable. Using cached prices.',
   },
+  youtube: {
+    enabled: false,
+    message: 'YouTube API unavailable. Please try again later.',
+  },
   facebook: {
     enabled: false,
     message: 'Facebook API unavailable. Please try again later.',

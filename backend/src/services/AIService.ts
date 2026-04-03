@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { circuitBreakerService } from './CircuitBreakerService';
 import { eventBus } from '../lib/eventBus';
@@ -15,7 +15,7 @@ const tracer = trace.getTracer('socialflow-ai');
  * and fallback strategies.
  */
 class AIService {
-  private genAI: GoogleGenerativeAI | null = null;
+  private genAI: GoogleGenAI | null = null;
   private model: any = null;
 
   constructor() {
@@ -30,8 +30,8 @@ class AIService {
 
     if (apiKey && apiKey !== 'your_gemini_api_key_here') {
       try {
-        this.genAI = new GoogleGenerativeAI(apiKey);
-        this.model = this.genAI.getGenerativeModel({ model: 'gemini-pro' });
+        this.genAI = new GoogleGenAI({ apiKey });
+        this.model = this.genAI.models;
       } catch (error) {
         logger.warn('Failed to initialize Gemini AI', { service: 'ai', error: (error as Error).message });
       }
@@ -82,9 +82,11 @@ class AIService {
       const result = await circuitBreakerService.execute(
         'ai',
         async () => {
-          const res = await this.model.generateContent(prompt);
-          const response = await res.response;
-          const text = response.text();
+          const res = await this.genAI!.models.generateContent({
+            model: 'gemini-2.0-flash',
+            contents: prompt,
+          });
+          const text = res.text;
 
           if (!text) throw new Error('Empty response from Gemini AI');
 

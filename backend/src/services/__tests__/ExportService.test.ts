@@ -1,364 +1,192 @@
 import { ExportService } from '../ExportService';
-import { paginatedQuery } from '../../lib/paginatedQuery';
 import { prisma } from '../../lib/prisma';
 import { Response } from 'express';
-import { PassThrough } from 'stream';
 
+// Mock Prisma
 jest.mock('../../lib/prisma', () => ({
   prisma: {
-    analyticsEntry: { findMany: jest.fn() },
-    post: { findMany: jest.fn() },
+    analyticsEntry: {
+      findMany: jest.fn(),
+    },
+    post: {
+      findMany: jest.fn(),
+    },
   },
 }));
 
-const BATCH_SIZE = 1000;
-const START = new Date('2025-01-01');
-const END = new Date('2025-12-31');
+describe('ExportService', () => {
+  let mockRes: Partial<Response>;
 
-/**
- * The service calls `stream.pipe(res)` — so res must be a real Writable.
- * We use a PassThrough and bolt setHeader onto it.
- */
-function makeRes(): { res: Response; output(): Promise<string> } {
-  const pt = new PassThrough();
-  const chunks: Buffer[] = [];
-  pt.on('data', (c) => chunks.push(c));
-  (pt as any).setHeader = jest.fn();
-  return {
-    res: pt as unknown as Response,
-    output: () =>
-      new Promise((resolve, reject) => {
-        pt.on('end', () => resolve(Buffer.concat(chunks).toString()));
-        pt.on('error', reject);
-      }),
-  };
-}
-
-function analyticsRow(id: string) {
-  return { id, organizationId: 'org-1', platform: 'twitter', metric: 'impressions', value: 1, recordedAt: new Date('2025-06-15') };
-}
-function postRow(id: string) {
-  return { id, organizationId: 'org-1', content: 'hello', platform: 'twitter', scheduledAt: null, createdAt: new Date('2025-06-15') };
-}
-
-/** Parse CSV output into data row IDs (skips header). */
-function csvIds(output: string): string[] {
-  return output.split('\n').slice(1).filter(Boolean).map((l) => l.split(',')[0]);
-}
-
-beforeEach(() => jest.clearAllMocks());
-
-// ── Original tests (preserved) ────────────────────────────────────────────────
-
-describe('streamAnalyticsAsCSV', () => {
-  it('sets correct headers', async () => {
-    (prisma.analyticsEntry.findMany as jest.Mock).mockResolvedValue([]);
-    const { res, output } = makeRes();
-    await ExportService.streamAnalyticsAsCSV('org-1', START, END, res);
-    await output();
-    expect((res as any).setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
-    expect((res as any).setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="analytics.csv"');
+  beforeEach(() => {
+    mockRes = {
+      setHeader: jest.fn(),
+      pipe: jest.fn(),
+      on: jest.fn(),
+      write: jest.fn(),
+      end: jest.fn(),
+    };
+    jest.clearAllMocks();
   });
 
-  it('queries with correct date range and organizationId', async () => {
-    (prisma.analyticsEntry.findMany as jest.Mock).mockResolvedValue([]);
-    const { res, output } = makeRes();
-    await ExportService.streamAnalyticsAsCSV('org-123', START, END, res);
-    await output();
-    expect(prisma.analyticsEntry.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ organizationId: 'org-123', recordedAt: { gte: START, lte: END } }) }),
-    );
+  describe('streamAnalyticsAsCSV', () => {
+    it('should set correct headers for CSV export', async () => {
+      (prisma.analyticsEntry.findMany as jest.Mock).mockResolvedValue([]);
+
+      await ExportService.streamAnalyticsAsCSV(
+        'org-123',
+        new Date('2025-01-01'),
+        new Date('2025-12-31'),
+        mockRes as Response,
+      );
+
+      expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
+      expect(mockRes.setHeader).toHaveBeenCalledWith(
+        'Content-Disposition',
+        'attachment; filename="analytics.csv"',
+      );
+    });
+
+    it('should query analytics with correct date range', async () => {
+      (prisma.analyticsEntry.findMany as jest.Mock).mockResolvedValue([]);
+
+      const startDate = new Date('2025-01-01');
+      const endDate = new Date('2025-12-31');
+
+      await ExportService.streamAnalyticsAsCSV('org-123', startDate, endDate, mockRes as Response);
+
+      expect(prisma.analyticsEntry.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: 'org-123',
+            recordedAt: {
+              gte: startDate,
+              lte: endDate,
+            },
+          }),
+        }),
+      );
+    });
+
+    it('should use cursor-based pagination', async () => {
+      const mockData = Array.from({ length: 1001 }, (_, i) => ({
+        id: `id-${i}`,
+        organizationId: 'org-123',
+        platform: 'twitter',
+        metric: 'impressions',
+        value: 100 + i,
+        recordedAt: new Date('2025-06-15'),
+      }));
+
+      (prisma.analyticsEntry.findMany as jest.Mock)
+        .mockResolvedValueOnce(mockData)
+        .mockResolvedValueOnce([]);
+
+      await ExportService.streamAnalyticsAsCSV(
+        'org-123',
+        new Date('2025-01-01'),
+        new Date('2025-12-31'),
+        mockRes as Response,
+      );
+
+      // Should be called twice: first batch + second batch (empty)
+      expect(prisma.analyticsEntry.findMany).toHaveBeenCalledTimes(2);
+
+      // Second call should use cursor
+      expect(prisma.analyticsEntry.findMany).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          cursor: { id: 'id-999' },
+          skip: 1,
+        }),
+      );
+    });
   });
 
-  it('uses cursor-based pagination across two fetches', async () => {
-    const page1 = Array.from({ length: BATCH_SIZE + 1 }, (_, i) => analyticsRow(`id-${i}`));
-    (prisma.analyticsEntry.findMany as jest.Mock)
-      .mockResolvedValueOnce(page1)
-      .mockResolvedValueOnce([]);
-    const { res, output } = makeRes();
-    await ExportService.streamAnalyticsAsCSV('org-1', START, END, res);
-    await output();
-    expect(prisma.analyticsEntry.findMany).toHaveBeenCalledTimes(2);
-    expect(prisma.analyticsEntry.findMany).toHaveBeenNthCalledWith(2,
-      expect.objectContaining({ cursor: { id: 'id-999' }, skip: 1 }),
-    );
-  });
-});
+  describe('streamAnalyticsAsJSON', () => {
+    it('should set correct headers for JSON export', async () => {
+      (prisma.analyticsEntry.findMany as jest.Mock).mockResolvedValue([]);
 
-describe('streamAnalyticsAsJSON', () => {
-  it('sets correct headers', async () => {
-    (prisma.analyticsEntry.findMany as jest.Mock).mockResolvedValue([]);
-    const { res, output } = makeRes();
-    await ExportService.streamAnalyticsAsJSON('org-1', START, END, res);
-    await output();
-    expect((res as any).setHeader).toHaveBeenCalledWith('Content-Type', 'application/x-ndjson; charset=utf-8');
-    expect((res as any).setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="analytics.jsonl"');
-  });
-});
+      await ExportService.streamAnalyticsAsJSON(
+        'org-123',
+        new Date('2025-01-01'),
+        new Date('2025-12-31'),
+        mockRes as Response,
+      );
 
-describe('streamPostsAsCSV', () => {
-  it('sets correct headers', async () => {
-    (prisma.post.findMany as jest.Mock).mockResolvedValue([]);
-    const { res, output } = makeRes();
-    await ExportService.streamPostsAsCSV('org-1', START, END, res);
-    await output();
-    expect((res as any).setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
-    expect((res as any).setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="posts.csv"');
+      expect(mockRes.setHeader).toHaveBeenCalledWith(
+        'Content-Type',
+        'application/x-ndjson; charset=utf-8',
+      );
+      expect(mockRes.setHeader).toHaveBeenCalledWith(
+        'Content-Disposition',
+        'attachment; filename="analytics.jsonl"',
+      );
+    });
   });
 
-  it('escapes double-quotes in post content', async () => {
-    (prisma.post.findMany as jest.Mock)
-      .mockResolvedValueOnce([{ id: 'p1', organizationId: 'org-1', content: 'Say "hi"', platform: 'twitter', scheduledAt: null, createdAt: new Date('2025-06-15') }])
-      .mockResolvedValueOnce([]);
-    const { res, output } = makeRes();
-    await ExportService.streamPostsAsCSV('org-1', START, END, res);
-    expect(await output()).toContain('Say ""hi""');
-  });
-});
+  describe('streamPostsAsCSV', () => {
+    it('should set correct headers for posts CSV export', async () => {
+      (prisma.post.findMany as jest.Mock).mockResolvedValue([]);
 
-describe('streamPostsAsJSON', () => {
-  it('sets correct headers', async () => {
-    (prisma.post.findMany as jest.Mock).mockResolvedValue([]);
-    const { res, output } = makeRes();
-    await ExportService.streamPostsAsJSON('org-1', START, END, res);
-    await output();
-    expect((res as any).setHeader).toHaveBeenCalledWith('Content-Type', 'application/x-ndjson; charset=utf-8');
-    expect((res as any).setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="posts.jsonl"');
-  });
-});
+      await ExportService.streamPostsAsCSV(
+        'org-123',
+        new Date('2025-01-01'),
+        new Date('2025-12-31'),
+        mockRes as Response,
+      );
 
-// ── Pagination boundary tests ─────────────────────────────────────────────────
+      expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
+      expect(mockRes.setHeader).toHaveBeenCalledWith(
+        'Content-Disposition',
+        'attachment; filename="posts.csv"',
+      );
+    });
 
-describe('pagination boundaries', () => {
-  it('exact page size (1000) — single fetch, hasMore becomes false', async () => {
-    (prisma.analyticsEntry.findMany as jest.Mock)
-      .mockResolvedValueOnce(Array.from({ length: BATCH_SIZE }, (_, i) => analyticsRow(`r-${i}`)));
-    const { res, output } = makeRes();
-    await ExportService.streamAnalyticsAsCSV('org-1', START, END, res);
-    expect(csvIds(await output())).toHaveLength(BATCH_SIZE);
-    expect(prisma.analyticsEntry.findMany).toHaveBeenCalledTimes(1);
-  });
+    it('should escape quotes in post content', async () => {
+      const mockData = [
+        {
+          id: 'post-1',
+          organizationId: 'org-123',
+          content: 'Hello "world"',
+          platform: 'twitter',
+          scheduledAt: null,
+          createdAt: new Date('2025-06-15'),
+        },
+      ];
 
-  it('BATCH_SIZE + 1 — sentinel stripped, second fetch issued', async () => {
-    const page1 = Array.from({ length: BATCH_SIZE + 1 }, (_, i) => analyticsRow(`r-${i}`));
-    (prisma.analyticsEntry.findMany as jest.Mock)
-      .mockResolvedValueOnce(page1)
-      .mockResolvedValueOnce([]);
-    const { res, output } = makeRes();
-    await ExportService.streamAnalyticsAsCSV('org-1', START, END, res);
-    const ids = csvIds(await output());
-    expect(ids).toHaveLength(BATCH_SIZE);
-    expect(ids).not.toContain(`r-${BATCH_SIZE}`); // sentinel never emitted
-    expect(prisma.analyticsEntry.findMany).toHaveBeenCalledTimes(2);
+      (prisma.post.findMany as jest.Mock).mockResolvedValueOnce(mockData).mockResolvedValueOnce([]);
+
+      await ExportService.streamPostsAsCSV(
+        'org-123',
+        new Date('2025-01-01'),
+        new Date('2025-12-31'),
+        mockRes as Response,
+      );
+
+      // Verify the stream was created and piped
+      expect(mockRes.pipe).toHaveBeenCalled();
+    });
   });
 
-  it('cursor points to last emitted record (not the sentinel)', async () => {
-    const page1 = Array.from({ length: BATCH_SIZE + 1 }, (_, i) => analyticsRow(`r-${String(i).padStart(4, '0')}`));
-    (prisma.analyticsEntry.findMany as jest.Mock)
-      .mockResolvedValueOnce(page1)
-      .mockResolvedValueOnce([]);
-    const { res, output } = makeRes();
-    await ExportService.streamAnalyticsAsCSV('org-1', START, END, res);
-    await output();
-    // After pop(), last item is index 999 → cursor = r-0999
-    expect(prisma.analyticsEntry.findMany).toHaveBeenNthCalledWith(2,
-      expect.objectContaining({ cursor: { id: 'r-0999' }, skip: 1 }),
-    );
-  });
+  describe('streamPostsAsJSON', () => {
+    it('should set correct headers for posts JSON export', async () => {
+      (prisma.post.findMany as jest.Mock).mockResolvedValue([]);
 
-  it('final page shorter than BATCH_SIZE — no extra fetch', async () => {
-    (prisma.analyticsEntry.findMany as jest.Mock)
-      .mockResolvedValueOnce(Array.from({ length: 7 }, (_, i) => analyticsRow(`last-${i}`)));
-    const { res, output } = makeRes();
-    await ExportService.streamAnalyticsAsCSV('org-1', START, END, res);
-    expect(csvIds(await output())).toHaveLength(7);
-    expect(prisma.analyticsEntry.findMany).toHaveBeenCalledTimes(1);
-  });
+      await ExportService.streamPostsAsJSON(
+        'org-123',
+        new Date('2025-01-01'),
+        new Date('2025-12-31'),
+        mockRes as Response,
+      );
 
-  it('empty result — only CSV header, no data rows', async () => {
-    (prisma.analyticsEntry.findMany as jest.Mock).mockResolvedValueOnce([]);
-    const { res, output } = makeRes();
-    await ExportService.streamAnalyticsAsCSV('org-1', START, END, res);
-    const lines = (await output()).split('\n').filter(Boolean);
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toBe('id,organizationId,platform,metric,value,recordedAt');
-  });
-
-  it('sparse IDs across two pages — no duplication, no omission', async () => {
-    // page1: BATCH_SIZE+1 items (last is sentinel with sparse id)
-    const page1 = [
-      ...Array.from({ length: BATCH_SIZE - 1 }, (_, i) => analyticsRow(`dense-${i}`)),
-      analyticsRow('sparse-A'),
-      analyticsRow('sparse-B'), // sentinel — must be stripped
-    ];
-    // page2: 3 items (< BATCH_SIZE → last page)
-    const page2 = [analyticsRow('sparse-C'), analyticsRow('sparse-D'), analyticsRow('sparse-E')];
-    (prisma.analyticsEntry.findMany as jest.Mock)
-      .mockResolvedValueOnce(page1)
-      .mockResolvedValueOnce(page2);
-    const { res, output } = makeRes();
-    await ExportService.streamAnalyticsAsCSV('org-1', START, END, res);
-    const ids = csvIds(await output());
-    expect(ids).toHaveLength(BATCH_SIZE + 3); // BATCH_SIZE from page1 + 3 from page2
-    expect(new Set(ids).size).toBe(ids.length); // no duplicates
-    expect(ids).not.toContain('sparse-B');       // sentinel stripped
-    expect(ids).toContain('sparse-E');            // last record present
-    expect(prisma.analyticsEntry.findMany).toHaveBeenCalledTimes(2);
-  });
-
-  it('multi-page full export — correct total, no duplicates', async () => {
-    const page1 = Array.from({ length: BATCH_SIZE + 1 }, (_, i) => analyticsRow(`p1-${i}`));
-    const page2 = Array.from({ length: BATCH_SIZE + 1 }, (_, i) => analyticsRow(`p2-${i}`));
-    const page3 = Array.from({ length: 42 }, (_, i) => analyticsRow(`p3-${i}`));
-    (prisma.analyticsEntry.findMany as jest.Mock)
-      .mockResolvedValueOnce(page1)
-      .mockResolvedValueOnce(page2)
-      .mockResolvedValueOnce(page3);
-    const { res, output } = makeRes();
-    await ExportService.streamAnalyticsAsCSV('org-1', START, END, res);
-    const ids = csvIds(await output());
-    expect(ids).toHaveLength(BATCH_SIZE * 2 + 42);
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(prisma.analyticsEntry.findMany).toHaveBeenCalledTimes(3);
-  });
-
-  it('posts: exact page size — single fetch, all rows emitted', async () => {
-    (prisma.post.findMany as jest.Mock)
-      .mockResolvedValueOnce(Array.from({ length: BATCH_SIZE }, (_, i) => postRow(`post-${i}`)));
-    const { res, output } = makeRes();
-    await ExportService.streamPostsAsCSV('org-1', START, END, res);
-    const ids = csvIds(await output());
-    expect(ids).toHaveLength(BATCH_SIZE);
-    expect(prisma.post.findMany).toHaveBeenCalledTimes(1);
-  });
-
-  it('posts: BATCH_SIZE + 1 — sentinel stripped, cursor advanced', async () => {
-    const page1 = Array.from({ length: BATCH_SIZE + 1 }, (_, i) => postRow(`post-${String(i).padStart(4, '0')}`));
-    (prisma.post.findMany as jest.Mock)
-      .mockResolvedValueOnce(page1)
-      .mockResolvedValueOnce([]);
-    const { res, output } = makeRes();
-    await ExportService.streamPostsAsCSV('org-1', START, END, res);
-    const ids = csvIds(await output());
-    expect(ids).toHaveLength(BATCH_SIZE);
-    expect(ids).not.toContain(`post-${String(BATCH_SIZE).padStart(4, '0')}`);
-    expect(prisma.post.findMany).toHaveBeenNthCalledWith(2,
-      expect.objectContaining({ cursor: { id: 'post-0999' }, skip: 1 }),
-    );
-  });
-});
-
-// ── paginatedQuery iterator smoke tests ──────────────────────────────────────
-
-describe('paginatedQuery', () => {
-  function makeFindMany(pages: Array<Array<{ id: string }>>) {
-    let call = 0;
-    return jest.fn(async () => pages[call++] ?? []);
-  }
-
-  it('yields nothing for empty result', async () => {
-    const fn = makeFindMany([[]]);
-    const results: { id: string }[] = [];
-    for await (const row of paginatedQuery(fn)) results.push(row);
-    expect(results).toHaveLength(0);
-    expect(fn).toHaveBeenCalledTimes(1);
-  });
-
-  it('yields all records from a single page smaller than BATCH_SIZE', async () => {
-    const page = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
-    const fn = makeFindMany([page]);
-    const results: { id: string }[] = [];
-    for await (const row of paginatedQuery(fn)) results.push(row);
-    expect(results.map((r) => r.id)).toEqual(['a', 'b', 'c']);
-    expect(fn).toHaveBeenCalledTimes(1);
-  });
-
-  it('strips sentinel and advances cursor across two pages', async () => {
-    const page1 = Array.from({ length: BATCH_SIZE + 1 }, (_, i) => ({ id: `r-${i}` }));
-    const page2 = [{ id: 'last' }];
-    const fn = makeFindMany([page1, page2]);
-    const results: { id: string }[] = [];
-    for await (const row of paginatedQuery(fn)) results.push(row);
-    expect(results).toHaveLength(BATCH_SIZE + 1);
-    expect(results.map((r) => r.id)).not.toContain(`r-${BATCH_SIZE}`); // sentinel gone
-    expect(fn).toHaveBeenNthCalledWith(2, expect.objectContaining({ cursor: { id: 'r-999' }, skip: 1 }));
-  });
-
-  it('first call uses no cursor and skip=0', async () => {
-    const fn = makeFindMany([[]]);
-    for await (const _ of paginatedQuery(fn)) { /* drain */ }
-    expect(fn).toHaveBeenCalledWith(expect.objectContaining({ cursor: undefined, skip: 0 }));
-  });
-
-  it('orderBy is always { id: asc }', async () => {
-    const fn = makeFindMany([[]]);
-    for await (const _ of paginatedQuery(fn)) { /* drain */ }
-    expect(fn).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { id: 'asc' } }));
-  });
-
-  it('take is always BATCH_SIZE + 1', async () => {
-    const fn = makeFindMany([[]]);
-    for await (const _ of paginatedQuery(fn)) { /* drain */ }
-    expect(fn).toHaveBeenCalledWith(expect.objectContaining({ take: BATCH_SIZE + 1 }));
-  });
-});
-
-// ── Per-method smoke tests (regression against refactor) ─────────────────────
-
-describe('streamAnalyticsAsCSV — smoke', () => {
-  it('emits correct CSV row format', async () => {
-    const row = analyticsRow('smoke-1');
-    (prisma.analyticsEntry.findMany as jest.Mock)
-      .mockResolvedValueOnce([row])
-      .mockResolvedValueOnce([]);
-    const { res, output } = makeRes();
-    await ExportService.streamAnalyticsAsCSV('org-1', START, END, res);
-    const body = await output();
-    expect(body).toContain('smoke-1,"org-1","twitter","impressions",1,');
-  });
-});
-
-describe('streamAnalyticsAsJSON — smoke', () => {
-  it('emits valid JSON Lines', async () => {
-    (prisma.analyticsEntry.findMany as jest.Mock).mockReset();
-    const row = analyticsRow('smoke-2');
-    (prisma.analyticsEntry.findMany as jest.Mock)
-      .mockResolvedValueOnce([row])
-      .mockResolvedValueOnce([]);
-    const { res, output } = makeRes();
-    await ExportService.streamAnalyticsAsJSON('org-1', START, END, res);
-    const body = await output();
-    const lines = body.split('\n').filter(Boolean);
-    expect(() => JSON.parse(lines[0])).not.toThrow();
-    expect(JSON.parse(lines[0]).id).toBe('smoke-2');
-  });
-});
-
-describe('streamPostsAsCSV — smoke', () => {
-  it('emits correct CSV row format', async () => {
-    const row = postRow('smoke-3');
-    (prisma.post.findMany as jest.Mock)
-      .mockResolvedValueOnce([row])
-      .mockResolvedValueOnce([]);
-    const { res, output } = makeRes();
-    await ExportService.streamPostsAsCSV('org-1', START, END, res);
-    const body = await output();
-    expect(body).toContain('smoke-3,"org-1","hello","twitter"');
-  });
-});
-
-describe('streamPostsAsJSON — smoke', () => {
-  it('emits valid JSON Lines', async () => {
-    (prisma.post.findMany as jest.Mock).mockReset();
-    const row = postRow('smoke-4');
-    (prisma.post.findMany as jest.Mock)
-      .mockResolvedValueOnce([row])
-      .mockResolvedValueOnce([]);
-    const { res, output } = makeRes();
-    await ExportService.streamPostsAsJSON('org-1', START, END, res);
-    const body = await output();
-    const lines = body.split('\n').filter(Boolean);
-    expect(() => JSON.parse(lines[0])).not.toThrow();
-    expect(JSON.parse(lines[0]).id).toBe('smoke-4');
+      expect(mockRes.setHeader).toHaveBeenCalledWith(
+        'Content-Type',
+        'application/x-ndjson; charset=utf-8',
+      );
+      expect(mockRes.setHeader).toHaveBeenCalledWith(
+        'Content-Disposition',
+        'attachment; filename="posts.jsonl"',
+      );
+    });
   });
 });

@@ -1,82 +1,45 @@
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { authenticate as authMiddleware, AuthRequest } from '../middleware/authenticate';
-import { validate } from '../middleware/validate';
+import { authenticate } from '../middleware/authenticate';
+import { generalLimiter } from '../middleware/rateLimit';
 import { predictiveService } from '../services/PredictiveService';
+import { validate } from '../middleware/validate';
 
 const router = Router();
-
-router.use(authMiddleware);
 
 const predictReachSchema = z.object({
   content: z.string().min(1),
   platform: z.enum(['instagram', 'tiktok', 'facebook', 'youtube', 'linkedin', 'x']),
-  scheduledTime: z.string().datetime().optional(),
+  scheduledTime: z.string().datetime().optional().transform((v) => v ? new Date(v) : undefined),
   hashtags: z.array(z.string()).optional(),
   mentions: z.array(z.string()).optional(),
   mediaType: z.enum(['text', 'image', 'video', 'carousel']).optional(),
   followerCount: z.number().int().positive().optional(),
 });
 
-/**
- * @openapi
- * /predictive/reach:
- *   post:
- *     tags: [Predictive]
- *     summary: Predict reach for a social media post
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [content, platform]
- *             properties:
- *               content: { type: string }
- *               platform: { type: string, enum: [instagram, tiktok, facebook, youtube, linkedin, x] }
- *               scheduledTime: { type: string, format: date-time }
- *               hashtags: { type: array, items: { type: string } }
- *               mentions: { type: array, items: { type: string } }
- *               mediaType: { type: string, enum: [text, image, video, carousel] }
- *               followerCount: { type: integer, minimum: 1 }
- *     responses:
- *       200:
- *         description: Reach prediction result
- *       400:
- *         description: Validation error
- *       401:
- *         description: Unauthorized
- */
-router.post('/reach', validate(predictReachSchema), async (req: AuthRequest, res: Response) => {
-  const input = {
-    ...req.body,
-    scheduledTime: req.body.scheduledTime ? new Date(req.body.scheduledTime) : undefined,
-  };
-  const prediction = await predictiveService.predictReach(input);
-  return res.json(prediction);
-});
+router.post(
+  '/reach',
+  generalLimiter,
+  authenticate,
+  validate(predictReachSchema),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const prediction = await predictiveService.predictReach(req.body);
+      res.json({ success: true, data: prediction });
+    } catch (error) {
+      res.status(500).json({ success: false, message: (error as Error).message });
+    }
+  },
+);
 
-/**
- * @openapi
- * /predictive/history/{postId}:
- *   get:
- *     tags: [Predictive]
- *     summary: Get prediction history for a post
- *     parameters:
- *       - in: path
- *         name: postId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Prediction history
- *       401:
- *         description: Unauthorized
- */
-router.get('/history/:postId', (_req: AuthRequest, res: Response) => {
-  // History is stored client-side; return model metrics as server-side context
-  return res.json({ metrics: predictiveService.getModelMetrics() });
-});
+// History endpoint — returns 404 until persistence is implemented
+router.get(
+  '/history/:postId',
+  generalLimiter,
+  authenticate,
+  async (_req: Request, res: Response): Promise<void> => {
+    res.status(404).json({ success: false, message: 'Post history not yet implemented' });
+  },
+);
 
 export default router;

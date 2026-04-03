@@ -93,7 +93,7 @@ router.post('/upload', upload.single('video'), async (req: Request, res: Respons
       jobId,
       status: 'pending',
     });
-  } catch (_error) {
+  } catch (error) {
     console.error('Upload error:', error);
     res.status(500).json({ error: 'Failed to upload video' });
   }
@@ -218,7 +218,7 @@ router.get('/health', async (req: Request, res: Response) => {
     const health = await videoHealthService.getHealthStatus();
     const statusCode = health.status === 'healthy' ? 200 : 503;
     res.status(statusCode).json(health);
-  } catch (_error) {
+  } catch (error) {
     res.status(500).json({
       status: 'unhealthy',
       error: 'Failed to check health status',

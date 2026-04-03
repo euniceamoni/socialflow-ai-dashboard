@@ -80,7 +80,7 @@ class TwitterService {
             throw new Error(`Twitter API error: ${response.status} - ${JSON.stringify(error)}`);
           }
 
-          const data = await response.json();
+          const data = await response.json() as any;
           return data.data;
         },
         async () => {
@@ -115,7 +115,7 @@ class TwitterService {
           throw new Error(`Twitter API error: ${response.status}`);
         }
 
-        const data = await response.json();
+        const data = await response.json() as any;
         return data.data || [];
       },
       async () => {
@@ -150,7 +150,7 @@ class TwitterService {
           throw new Error(`Twitter API error: ${response.status}`);
         }
 
-        const data = await response.json();
+        const data = await response.json() as any;
         return data.data;
       },
       async () => {
@@ -185,7 +185,7 @@ class TwitterService {
           throw new Error(`Twitter API error: ${response.status}`);
         }
 
-        const data = await response.json();
+        const data = await response.json() as any;
         return data.data || [];
       },
       async () => {

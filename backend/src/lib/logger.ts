@@ -103,8 +103,8 @@ export interface Logger {
   info: (message: string, metadata?: unknown) => void;
   warn: (message: string, metadata?: unknown) => void;
   error: (message: string, metadata?: unknown) => void;
+  debug: (message: string, metadata?: unknown) => void;
 }
-
 /**
  * Create a context-aware logger that automatically includes the current
  * request ID (via AsyncLocalStorage) and a module scope label.
@@ -118,4 +118,6 @@ export const createLogger = (scope: string): Logger => ({
     winstonLogger.warn(message, { scope, requestId: getRequestId(), ...(metadata as object) }),
   error: (message, metadata) =>
     winstonLogger.error(message, { scope, requestId: getRequestId(), ...(metadata as object) }),
+  debug: (message, metadata) =>
+    winstonLogger.debug(message, { scope, requestId: getRequestId(), ...(metadata as object) }),
 });

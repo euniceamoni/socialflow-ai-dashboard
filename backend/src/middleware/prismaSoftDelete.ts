@@ -12,13 +12,7 @@ type Next = (params: MiddlewareParams) => Promise<any>;
 // Models that support soft delete (have a deletedAt field)
 const SOFT_DELETE_MODELS = new Set(['User', 'Listing']);
 
-const FIND_ACTIONS = new Set([
-  'findFirst',
-  'findUnique',
-  'findMany',
-  'findFirstOrThrow',
-  'findUniqueOrThrow',
-]);
+const FIND_MANY_ACTIONS = new Set(['findFirst', 'findMany', 'findFirstOrThrow']);
 
 export const softDeleteMiddleware = async (params: MiddlewareParams, next: Next): Promise<any> => {
   if (!params.model || !SOFT_DELETE_MODELS.has(params.model)) {
@@ -37,12 +31,25 @@ export const softDeleteMiddleware = async (params: MiddlewareParams, next: Next)
     return next(params);
   }
 
-  if (FIND_ACTIONS.has(params.action)) {
-    if (params.action === 'findUnique') {
-      params.action = 'findFirst';
-    } else if (params.action === 'findUniqueOrThrow') {
-      params.action = 'findFirstOrThrow';
-    }
+  // findUnique/findUniqueOrThrow only accept unique fields in `where`, so we
+  // rewrite them to findFirst/findFirstOrThrow and add the deletedAt filter.
+  if (params.action === 'findUnique') {
+    params.action = 'findFirst';
+    params.args ??= {};
+    params.args.where ??= {};
+    params.args.where.deletedAt = null;
+    return next(params);
+  }
+
+  if (params.action === 'findUniqueOrThrow') {
+    params.action = 'findFirstOrThrow';
+    params.args ??= {};
+    params.args.where ??= {};
+    params.args.where.deletedAt = null;
+    return next(params);
+  }
+
+  if (FIND_MANY_ACTIONS.has(params.action)) {
     params.args ??= {};
     params.args.where ??= {};
     params.args.where.deletedAt = null;

@@ -1,8 +1,8 @@
 import 'reflect-metadata';
 import { injectable, inject } from 'inversify';
 import { NotificationManager } from './notificationProvider';
-import { alertConfigService } from './alertConfigService';
-import { TYPES } from '../config/inversify.config';
+import { AlertConfigService } from './alertConfigService';
+import { TYPES } from '../config/types';
 
 export interface HealthMetrics {
   service: string;
@@ -17,9 +17,14 @@ export interface HealthMetrics {
 export class HealthMonitor {
   private metrics: Map<string, HealthMetrics> = new Map();
   private notificationManager: NotificationManager;
+  private alertConfig: AlertConfigService;
 
-  constructor(@inject(TYPES.NotificationManager) notificationManager: NotificationManager) {
+  constructor(
+    @inject(TYPES.NotificationManager) notificationManager: NotificationManager,
+    @inject(TYPES.AlertConfigService) alertConfig: AlertConfigService,
+  ) {
     this.notificationManager = notificationManager;
+    this.alertConfig = alertConfig;
   }
 
   async recordMetric(metric: HealthMetrics): Promise<void> {
@@ -33,11 +38,11 @@ export class HealthMonitor {
     current: HealthMetrics,
     previous?: HealthMetrics,
   ): Promise<void> {
-    const config = alertConfigService.getConfig(current.service);
+    const config = this.alertConfig.getConfig(current.service);
     if (!config || !config.enabled) return;
 
     const { thresholds } = config;
-    const shouldAlert = alertConfigService.canAlert(current.service);
+    const shouldAlert = this.alertConfig.canAlert(current.service);
 
     // Check error rate
     if (current.errorRate > thresholds.errorRatePercent && shouldAlert) {
@@ -52,7 +57,7 @@ export class HealthMonitor {
         },
         timestamp: current.lastChecked,
       });
-      alertConfigService.recordAlert(current.service);
+      this.alertConfig.recordAlert(current.service);
     }
 
     // Check response time
@@ -68,7 +73,7 @@ export class HealthMonitor {
         },
         timestamp: current.lastChecked,
       });
-      alertConfigService.recordAlert(current.service);
+      this.alertConfig.recordAlert(current.service);
     }
 
     // Check consecutive failures
@@ -84,7 +89,7 @@ export class HealthMonitor {
         },
         timestamp: current.lastChecked,
       });
-      alertConfigService.recordAlert(current.service);
+      this.alertConfig.recordAlert(current.service);
     }
 
     // Check status transition from healthy to unhealthy
@@ -101,7 +106,7 @@ export class HealthMonitor {
         },
         timestamp: current.lastChecked,
       });
-      alertConfigService.recordAlert(current.service);
+      this.alertConfig.recordAlert(current.service);
     }
   }
 

@@ -102,7 +102,7 @@ router.post('/upload', upload.single('image'), async (req: Request, res: Respons
     res.setHeader('Cache-Control', 'public, max-age=31536000');
     res.setHeader('X-Cache-Key', cacheKey);
     res.send(buffer);
-  } catch (_error) {
+  } catch (error) {
     console.error('Image optimization error:', error);
     res.status(500).json({ error: 'Failed to optimize image' });
   }
@@ -184,7 +184,7 @@ router.get('/proxy', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'public, max-age=31536000');
     res.setHeader('X-Cache-Key', cacheKey);
     res.send(buffer);
-  } catch (_error) {
+  } catch (error) {
     console.error('Image proxy error:', error);
     res.status(500).json({ error: 'Failed to proxy image' });
   }
@@ -204,7 +204,7 @@ router.get('/cache/size', async (req: Request, res: Response) => {
   try {
     const size = await ImageOptimizationService.getCacheSize();
     res.json({ cacheSize: size, cacheSizeMB: (size / 1024 / 1024).toFixed(2) });
-  } catch (_error) {
+  } catch (error) {
     res.status(500).json({ error: 'Failed to get cache size' });
   }
 });
@@ -223,7 +223,7 @@ router.delete('/cache', async (req: Request, res: Response) => {
   try {
     await ImageOptimizationService.clearCache();
     res.json({ message: 'Cache cleared' });
-  } catch (_error) {
+  } catch (error) {
     res.status(500).json({ error: 'Failed to clear cache' });
   }
 });

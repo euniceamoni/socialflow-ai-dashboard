@@ -99,7 +99,7 @@ class CircuitBreakerService {
     const breaker = this.getBreaker(serviceName);
 
     try {
-      return await breaker.fire(fn);
+      return (await breaker.fire(fn)) as T;
     } catch (error) {
       // Circuit is open or function failed
       if (fallback) {
@@ -110,11 +110,11 @@ class CircuitBreakerService {
       // Check if we have a registered fallback handler
       const registeredFallback = this.fallbackHandlers.get(serviceName);
       if (registeredFallback) {
-        return await registeredFallback(error);
+        return (await registeredFallback(error)) as T;
       }
 
       // Use default fallback strategy
-      const strategy = FALLBACK_STRATEGIES[serviceName];
+      const strategy = (FALLBACK_STRATEGIES as Record<string, { enabled: boolean; message: string }>)[serviceName];
       if (strategy?.enabled) {
         throw new CircuitBreakerError(serviceName, strategy.message, error);
       }
@@ -158,19 +158,10 @@ class CircuitBreakerService {
    */
   private extractStats(breaker: CircuitBreaker, name: string): CircuitStats {
     const stats = breaker.stats;
-    const latency = breaker.latencyMean
-      ? {
-          mean: breaker.latencyMean || 0,
-          median: stats.latencies?.median || 0,
-          p95: stats.latencies?.p95 || 0,
-          p99: stats.latencies?.p99 || 0,
-        }
-      : {
-          mean: 0,
-          median: 0,
-          p95: 0,
-          p99: 0,
-        };
+    const latencyTimes: number[] = (stats as any).latencyTimes ?? [];
+    const sorted = [...latencyTimes].sort((a, b) => a - b);
+    const mean = sorted.length ? sorted.reduce((s, v) => s + v, 0) / sorted.length : 0;
+    const pct = (p: number) => sorted.length ? sorted[Math.floor(sorted.length * p)] ?? 0 : 0;
 
     return {
       name,
@@ -180,7 +171,7 @@ class CircuitBreakerService {
       rejects: stats.rejects || 0,
       fires: stats.fires || 0,
       fallbacks: stats.fallbacks || 0,
-      latency,
+      latency: { mean, median: pct(0.5), p95: pct(0.95), p99: pct(0.99) },
     };
   }
 
@@ -201,11 +192,11 @@ class CircuitBreakerService {
     });
 
     breaker.on('failure', (error) => {
-      logger.error(`Circuit breaker failure for ${serviceName}`, { message: error.message });
+      logger.error(`Circuit breaker failure for ${serviceName}: ${error.message}`);
     });
 
     breaker.on('success', () => {
-      logger.info(`Circuit breaker success for ${serviceName}`);
+      logger.debug(`Circuit breaker success for ${serviceName}`);
     });
 
     breaker.on('timeout', () => {

@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
@@ -153,4 +154,55 @@ model Listing {
   @@index([isActive])
   @@index([createdAt])
   @@index([deletedAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  action     String
+  resource   String
+  resourceId String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([resource, resourceId])
+}
+
+model WebhookSubscription {
+  id        String            @id @default(uuid())
+  userId    String?
+  url       String
+  secret    String
+  events    String[]
+  isActive  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  deliveries WebhookDelivery[]
+
+  @@index([isActive])
+  @@index([userId])
+}
+
+model WebhookDelivery {
+  id             String              @id @default(uuid())
+  subscriptionId String
+  subscription   WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  eventType      String
+  payload        String
+  status         String              @default("pending")
+  attempts       Int                 @default(0)
+  nextRetryAt    DateTime?
+  lastError      String?
+  errorMessage   String?
+  responseStatus Int?
+  responseBody   String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([subscriptionId])
+  @@index([status, nextRetryAt])
+  @@index([createdAt])
 }

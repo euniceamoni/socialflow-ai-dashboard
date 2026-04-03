@@ -11,12 +11,11 @@ const redisClient = new Redis({
   db: parseInt(process.env.REDIS_DB || '0'),
 });
 
-const redlock = new Redlock([redisClient], {
+const redlock = new Redlock([redisClient as any], {
   driftFactor: 0.01,
   retryCount: 3,
   retryDelay: 200,
   retryJitter: 200,
-  automaticExtensionThreshold: 500,
 });
 
 export interface LockOptions {

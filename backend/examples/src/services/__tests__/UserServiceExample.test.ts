@@ -1,9 +1,9 @@
 import 'reflect-metadata';
 import { Container } from 'inversify';
-import { TYPES } from '../config/inversify.config';
-import { UserServiceExample } from '../services/UserServiceExample';
-import { HealthService } from '../services/healthService';
-import { NotificationManager } from '../services/notificationProvider';
+import { TYPES } from '../../config/inversify.config';
+import { UserServiceExample } from '../UserServiceExample';
+import { HealthService } from '../healthService';
+import { NotificationManager } from '../notificationProvider';
 
 /**
  * Example: Testing with InversifyJS DI
@@ -68,7 +68,7 @@ describe('UserServiceExample with DI', () => {
 
     it('should send alert when system is unhealthy', async () => {
       mockHealthService.getSystemStatus.mockResolvedValueOnce({
-        dependencies: {},
+        dependencies: {} as any,
         overallStatus: 'unhealthy',
       });
 

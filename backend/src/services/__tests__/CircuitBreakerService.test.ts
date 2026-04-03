@@ -1,4 +1,4 @@
-import { circuitBreakerService } from '../CircuitBreakerService';
+import { circuitBreakerService, CircuitStats } from '../CircuitBreakerService';
 
 describe('CircuitBreakerService', () => {
   beforeEach(() => {
@@ -89,24 +89,24 @@ describe('CircuitBreakerService', () => {
       const stats = circuitBreakerService.getStats();
 
       expect(Array.isArray(stats)).toBe(true);
-      expect(stats.length).toBeGreaterThan(0);
+      expect((stats as CircuitStats[]).length).toBeGreaterThan(0);
     });
   });
 
   describe('Service-Specific Configurations', () => {
     it('should use AI-specific configuration', async () => {
       const breaker = circuitBreakerService.getBreaker('ai');
-      expect(breaker.options.timeout).toBe(30000); // AI has 30s timeout
+      expect((breaker as any).options.timeout).toBe(30000); // AI has 30s timeout
     });
 
     it('should use Twitter-specific configuration', async () => {
       const breaker = circuitBreakerService.getBreaker('twitter');
-      expect(breaker.options.timeout).toBe(10000); // Twitter has 10s timeout
+      expect((breaker as any).options.timeout).toBe(10000); // Twitter has 10s timeout
     });
 
     it('should use Translation-specific configuration', async () => {
       const breaker = circuitBreakerService.getBreaker('translation');
-      expect(breaker.options.timeout).toBe(15000); // Translation has 15s timeout
+      expect((breaker as any).options.timeout).toBe(15000); // Translation has 15s timeout
     });
   });
 
@@ -130,7 +130,7 @@ describe('CircuitBreakerService', () => {
 
       try {
         await circuitBreakerService.execute('twitter', mockFn);
-      } catch (_error) {
+      } catch (error) {
         expect(error).toBeInstanceOf(Error);
       }
     });
@@ -141,7 +141,7 @@ describe('CircuitBreakerService', () => {
 
       try {
         await circuitBreakerService.execute('twitter', mockFn);
-      } catch (_error) {
+      } catch (error) {
         expect(error).toBe(originalError);
       }
     });

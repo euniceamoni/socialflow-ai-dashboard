@@ -9,6 +9,7 @@ export type AuditAction =
   | 'auth:register'
   | 'auth:login'
   | 'auth:logout'
+  | 'auth:change-password'
   // Posts
   | 'post:create'
   | 'post:update'

@@ -1,25 +1,19 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
-import { softDeleteMiddleware } from '../middleware/prismaSoftDelete';
-import { applyReadWriteSplitting } from './readReplica';
 import { config } from '../config/config';
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 const tracer = trace.getTracer('socialflow-db');
 
-// Models that should be scoped to an organization
-const ORG_SCOPED_MODELS = new Set(['Post', 'AnalyticsEntry', 'Listing']);
+// Models that support soft delete (have a deletedAt field)
+const SOFT_DELETE_MODELS = new Set(['User', 'Listing']);
 
-/**
- * Pool sizing defaults:
- *   development — small pool, fast feedback on connection leaks
- *   production  — sized for concurrent request handling
- *                 Rule of thumb: (2 × num_cores) + 1, capped at 20 for PgBouncer compat
- *
- * Both values can be overridden via DB_CONNECTION_LIMIT / DB_POOL_TIMEOUT env vars.
- */
+// Models that should be scoped to an organization
+const ORG_SCOPED_MODELS = new Set(['Post', 'AnalyticsEntry']);
+
 const POOL_DEFAULTS = {
   development: { connection_limit: 5,  pool_timeout: 10 },
   test:        { connection_limit: 2,  pool_timeout: 10 },
@@ -40,102 +34,98 @@ function buildDatasourceUrl(): string {
   return url.toString();
 }
 
-function createInstrumentedPrisma(): PrismaClient {
-  // Prisma v7 reads DATABASE_URL from the environment; inject pool params before construction
-  process.env.DATABASE_URL = buildDatasourceUrl();
-  const client = new PrismaClient();
+/**
+ * Prisma v7 query extension that handles:
+ * 1. Soft delete — rewrites delete/find operations for soft-delete models
+ * 2. Org scoping — filters by organizationId when __orgId is present
+ * 3. Tracing — wraps every query in an OpenTelemetry span
+ */
+function createExtendedClient() {
+  const connectionString = buildDatasourceUrl();
+  const adapter = new PrismaPg({ connectionString });
+  const base = new PrismaClient({ adapter });
 
-  // Soft delete: convert deletes to updates and filter out deleted records
-  client.$use(softDeleteMiddleware);
+  return base.$extends({
+    query: {
+      $allModels: {
+        async $allOperations({ model, operation, args, query }: {
+          model: string;
+          operation: string;
+          args: Record<string, any>;
+          query: (args: Record<string, any>) => Promise<any>;
+        }) {
+          // ── Soft delete ────────────────────────────────────────────────
+          if (SOFT_DELETE_MODELS.has(model)) {
+            if (operation === 'delete') {
+              return query({ ...args, data: { deletedAt: new Date() } });
+            }
+            if (operation === 'deleteMany') {
+              return (base as any)[model.charAt(0).toLowerCase() + model.slice(1)].updateMany({
+                ...args,
+                data: { deletedAt: new Date() },
+              });
+            }
+            if (operation === 'findUnique' || operation === 'findUniqueOrThrow') {
+              const newOp = operation === 'findUnique' ? 'findFirst' : 'findFirstOrThrow';
+              const newArgs = { ...args, where: { ...args.where, deletedAt: null } };
+              return (base as any)[model.charAt(0).toLowerCase() + model.slice(1)][newOp](newArgs);
+            }
+            if (['findFirst', 'findFirstOrThrow', 'findMany'].includes(operation)) {
+              args = { ...args, where: { ...args.where, deletedAt: null } };
+            }
+          }
 
-  // Wrap every query in a span via Prisma middleware
-  // Tracing middleware
-  client.$use(async (params, next) => {
-    const spanName = `db.${params.model ?? 'unknown'}.${params.action}`;
-    const span = tracer.startSpan(spanName, {
-      attributes: {
-        'db.system': 'postgresql',
-        'db.operation': params.action,
-        'db.prisma.model': params.model ?? '',
+          // ── Org scoping ────────────────────────────────────────────────
+          if (ORG_SCOPED_MODELS.has(model)) {
+            const orgId: string | undefined = args.__orgId;
+            if (orgId) {
+              const newArgs = { ...args };
+              delete newArgs.__orgId;
+
+              const readOps = ['findUnique', 'findFirst', 'findMany', 'count', 'aggregate', 'groupBy'];
+              const writeOps = ['create', 'createMany', 'update', 'updateMany', 'upsert', 'delete', 'deleteMany'];
+
+              if (readOps.includes(operation)) {
+                newArgs.where = { ...newArgs.where, organizationId: orgId };
+              } else if (writeOps.includes(operation)) {
+                if (operation === 'create' || operation === 'upsert') {
+                  newArgs.data = { ...newArgs.data, organizationId: orgId };
+                } else if (operation === 'createMany') {
+                  const data = Array.isArray(newArgs.data) ? newArgs.data : [newArgs.data];
+                  newArgs.data = data.map((d: Record<string, unknown>) => ({ ...d, organizationId: orgId }));
+                } else {
+                  newArgs.where = { ...newArgs.where, organizationId: orgId };
+                }
+              }
+              args = newArgs;
+            }
+          }
+
+          // ── Tracing ────────────────────────────────────────────────────
+          const span = tracer.startSpan(`db.${model}.${operation}`, {
+            attributes: {
+              'db.system': 'postgresql',
+              'db.operation': operation,
+              'db.prisma.model': model,
+            },
+          });
+          try {
+            const result = await query(args);
+            span.setStatus({ code: SpanStatusCode.OK });
+            return result;
+          } catch (err) {
+            span.setStatus({ code: SpanStatusCode.ERROR, message: err instanceof Error ? err.message : String(err) });
+            span.recordException(err as Error);
+            throw err;
+          } finally {
+            span.end();
+          }
+        },
       },
-    });
-
-    try {
-      const result = await next(params);
-      span.setStatus({ code: SpanStatusCode.OK });
-      return result;
-    } catch (err) {
-      span.setStatus({
-        code: SpanStatusCode.ERROR,
-        message: err instanceof Error ? err.message : String(err),
-      });
-      span.recordException(err as Error);
-      throw err;
-    } finally {
-      span.end();
-    }
+    },
   });
-
-  // Org-scoping middleware — filters read/write queries by organizationId when provided
-  client.$use(async (params, next) => {
-    if (!params.model || !ORG_SCOPED_MODELS.has(params.model)) return next(params);
-
-    const orgId: string | undefined = (params.args as Record<string, unknown>)?.__orgId as
-      | string
-      | undefined;
-    if (!orgId) return next(params);
-
-    // Remove the injected __orgId sentinel before forwarding
-    if (params.args && typeof params.args === 'object') {
-      delete (params.args as Record<string, unknown>).__orgId;
-    }
-
-    const readActions = ['findUnique', 'findFirst', 'findMany', 'count', 'aggregate', 'groupBy'];
-    const writeActions = [
-      'create',
-      'createMany',
-      'update',
-      'updateMany',
-      'upsert',
-      'delete',
-      'deleteMany',
-    ];
-
-    if (readActions.includes(params.action)) {
-      params.args = params.args ?? {};
-      params.args.where = {
-        ...(params.args.where ?? {}),
-        organizationId: orgId,
-      };
-    } else if (writeActions.includes(params.action)) {
-      if (params.action === 'create' || params.action === 'upsert') {
-        params.args.data = {
-          ...(params.args.data ?? {}),
-          organizationId: orgId,
-        };
-      } else if (params.action === 'createMany') {
-        const data = Array.isArray(params.args.data) ? params.args.data : [params.args.data];
-        params.args.data = data.map((d: Record<string, unknown>) => ({
-          ...d,
-          organizationId: orgId,
-        }));
-      } else {
-        params.args.where = {
-          ...(params.args.where ?? {}),
-          organizationId: orgId,
-        };
-      }
-    }
-
-    return next(params);
-  });
-
-  // Read/Write splitting — routes reads to replicas, writes to primary
-  applyReadWriteSplitting(client);
-
-  return client;
 }
 
-export const prisma = globalForPrisma.prisma ?? createInstrumentedPrisma();
+export const prisma = globalForPrisma.prisma ?? (createExtendedClient() as unknown as PrismaClient);
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+if (config.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
