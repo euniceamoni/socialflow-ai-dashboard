@@ -1,8 +1,12 @@
 import 'reflect-metadata';
-import { injectable } from 'inversify';
+import { injectable, inject, optional } from 'inversify';
 import { createLogger } from '../lib/logger';
+import { DynamicConfigService } from './DynamicConfigService';
 
 const logger = createLogger('alertConfig');
+
+/** DynamicConfig key prefix for per-queue cooldown overrides */
+const QUEUE_COOLDOWN_KEY_PREFIX = 'ALERT_COOLDOWN_MS_QUEUE_';
 
 export interface AlertThreshold {
   errorRatePercent: number;
@@ -20,8 +24,10 @@ export interface ServiceAlertConfig {
 export class AlertConfigService {
   private configs: Map<string, ServiceAlertConfig> = new Map();
   private lastAlertTime: Map<string, number> = new Map();
+  private dynamicConfig?: DynamicConfigService;
 
-  constructor() {
+  constructor(@inject('DynamicConfigService') @optional() dynamicConfig?: DynamicConfigService) {
+    this.dynamicConfig = dynamicConfig;
     this.initializeDefaults();
   }
 
@@ -60,13 +66,29 @@ export class AlertConfigService {
     logger.info('Alert configuration updated', { service, config });
   }
 
+  /**
+   * Resolves the effective cooldown for a given service/queue name.
+   * Checks DynamicConfigService for a per-queue override first, then falls
+   * back to the value stored in the service config map.
+   *
+   * Dynamic config key format: ALERT_COOLDOWN_MS_QUEUE_<QUEUE_NAME_UPPERCASE>
+   * Example: ALERT_COOLDOWN_MS_QUEUE_EMAIL  → overrides cooldown for "email" queue
+   */
+  getCooldown(queueName: string): number {
+    const dynamicKey = `${QUEUE_COOLDOWN_KEY_PREFIX}${queueName.toUpperCase()}`;
+    if (this.dynamicConfig) {
+      const override = this.dynamicConfig.get<number | null>(dynamicKey, null);
+      if (override !== null && override > 0) {
+        return override;
+      }
+    }
+    return this.configs.get(queueName)?.cooldownMs ?? parseInt(process.env.ALERT_COOLDOWN_MS || '300000', 10);
+  }
+
   canAlert(service: string): boolean {
     const lastAlert = this.lastAlertTime.get(service) || 0;
-    const config = this.configs.get(service);
-    if (!config) return false;
-
     const timeSinceLastAlert = Date.now() - lastAlert;
-    return timeSinceLastAlert >= config.cooldownMs;
+    return timeSinceLastAlert >= this.getCooldown(service);
   }
 
   recordAlert(service: string): void {
